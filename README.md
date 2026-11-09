@@ -40,6 +40,8 @@ All configuration is supplied through environment variables. No API keys or data
 | `FOOTBALL_SYNC_LIMIT` | `20` | Number of recent matches requested by the startup synchronization |
 | `FOOTBALL_STATISTICS_SYNC_ENABLED` | `false` | Run one statistics synchronization for persisted matches during startup |
 | `FOOTBALL_STATISTICS_SYNC_LIMIT` | `20` | Number of recent persisted matches whose team statistics are requested |
+| `FOOTBALL_PLAYER_STATISTICS_SYNC_ENABLED` | `false` | Run one player-statistics synchronization for persisted matches during startup |
+| `FOOTBALL_PLAYER_STATISTICS_SYNC_LIMIT` | `20` | Number of recent persisted matches whose player statistics are requested (`1`–`100`) |
 
 PowerShell live-mode example:
 
@@ -117,6 +119,45 @@ docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT installed_ran
 docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT m.provider_fixture_id, t.name, s.shots, s.shots_on_target, s.possession_percentage, s.coverage_status, s.data_source, s.synthetic, s.provider_checked_at FROM team_match_statistics s JOIN matches m ON m.id = s.match_id JOIN teams t ON t.id = s.team_id ORDER BY m.kickoff_time DESC, t.name LIMIT 40;"
 ```
 
+## Synchronize player statistics
+
+Player-statistics synchronization is opt-in, runs once during application startup, and reads only already-persisted finished fixtures. When all three synchronization flags are enabled, match synchronization runs first, team-statistics synchronization second, and player-statistics synchronization third. No GET endpoint performs synchronization.
+
+Each selected fixture consumes one API-Football `/fixtures/players` request. Use a conservative limit and disable the flag after the startup run to avoid unintended quota consumption. Provider failures and rate-limit responses are not recorded as `UNAVAILABLE`; existing player rows remain intact. Successful empty responses are recorded as fixture-level `UNAVAILABLE`. Partial responses upsert usable players without deleting existing rows.
+
+```powershell
+$env:DB_PASSWORD = "your-local-database-password"
+$env:FOOTBALL_DATA_MODE = "live"
+$env:FOOTBALL_API_KEY = "your-api-key"
+$env:FOOTBALL_SYNC_ENABLED = "true"
+$env:FOOTBALL_SYNC_LIMIT = "20"
+$env:FOOTBALL_STATISTICS_SYNC_ENABLED = "true"
+$env:FOOTBALL_STATISTICS_SYNC_LIMIT = "20"
+$env:FOOTBALL_PLAYER_STATISTICS_SYNC_ENABLED = "true"
+$env:FOOTBALL_PLAYER_STATISTICS_SYNC_LIMIT = "20"
+
+cd backend
+.\mvnw.cmd spring-boot:run
+```
+
+After the startup log reports the result, disable synchronization for normal API use:
+
+```powershell
+$env:FOOTBALL_SYNC_ENABLED = "false"
+$env:FOOTBALL_STATISTICS_SYNC_ENABLED = "false"
+$env:FOOTBALL_PLAYER_STATISTICS_SYNC_ENABLED = "false"
+```
+
+Mock player synchronization never fabricates players or statistics. It records selected mock fixtures as `UNAVAILABLE` with an empty player list.
+
+Verify Flyway V3 and stored player data without modifying the database:
+
+```powershell
+docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;"
+docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT m.provider_fixture_id, c.coverage_status, c.valid_player_count, c.skipped_player_count, c.data_source, c.provider_checked_at FROM match_player_statistics_coverage c JOIN matches m ON m.id = c.match_id ORDER BY m.kickoff_time DESC LIMIT 20;"
+docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT m.provider_fixture_id, p.provider_player_id, p.name, t.name AS represented_team, s.minutes, s.goals, s.assists, s.rating, s.data_source FROM player_match_statistics s JOIN matches m ON m.id = s.match_id JOIN players p ON p.id = s.player_id JOIN teams t ON t.id = s.team_id ORDER BY m.kickoff_time DESC, p.name LIMIT 100;"
+```
+
 ## API examples
 
 ```bash
@@ -125,6 +166,9 @@ curl "http://localhost:8080/api/v1/teams/manchester-united/matches?limit=5"
 curl "http://localhost:8080/api/v1/teams/manchester-united/analytics/summary?limit=20"
 curl "http://localhost:8080/api/v1/teams/manchester-united/analytics/trends?limit=10"
 curl "http://localhost:8080/api/v1/matches/123456/statistics"
+curl "http://localhost:8080/api/v1/teams/manchester-united/players?season=2026&page=0&size=20&sort=minutes,desc"
+curl "http://localhost:8080/api/v1/teams/manchester-united/players/12345/statistics?season=2026"
+curl "http://localhost:8080/api/v1/matches/123456/players"
 ```
 
 The match limit must be between 1 and 20. The configured CORS origin is `http://localhost:5173`.
@@ -136,7 +180,12 @@ PowerShell request examples:
 Invoke-RestMethod "http://localhost:8080/api/v1/teams/manchester-united/analytics/summary?limit=20"
 Invoke-RestMethod "http://localhost:8080/api/v1/teams/manchester-united/analytics/trends?limit=10"
 Invoke-RestMethod "http://localhost:8080/api/v1/matches/123456/statistics"
+Invoke-RestMethod "http://localhost:8080/api/v1/teams/manchester-united/players?season=2026&page=0&size=20&sort=minutes%2Cdesc"
+Invoke-RestMethod "http://localhost:8080/api/v1/teams/manchester-united/players/12345/statistics?season=2026"
+Invoke-RestMethod "http://localhost:8080/api/v1/matches/123456/players"
 ```
+
+Player analytics require `season`; `competitionId` optionally filters by the provider competition ID. Page numbers start at zero, page size must be `1`–`100`, and sort fields are limited to `name`, `appearances`, `minutes`, `goals`, `assists`, and `rating`. Player identity is source-scoped, while represented team is stored per match, so statistics from another club after a transfer are excluded from Manchester United aggregation. Missing metrics remain `null` and include covered appearances, total appearances, and coverage percentage.
 
 ## Tests
 
