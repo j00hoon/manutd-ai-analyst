@@ -1,6 +1,9 @@
 package com.manutd.analyst.client;
 
-import com.manutd.analyst.dto.MatchResponse;
+import com.manutd.analyst.client.model.FootballCompetitionData;
+import com.manutd.analyst.client.model.FootballMatchData;
+import com.manutd.analyst.client.model.FootballTeamData;
+import com.manutd.analyst.entity.FootballDataSource;
 import com.manutd.analyst.exception.FootballDataException;
 import com.manutd.analyst.exception.FootballDataRateLimitException;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,22 +45,22 @@ public class ApiFootballDataProvider implements FootballDataProvider {
     }
 
     @Override
-    public List<MatchResponse> getLatestFinishedMatches(int limit) {
+    public List<FootballMatchData> getLatestFinishedMatchData(int limit) {
         requireApiKey();
         long teamId = discoverManchesterUnitedTeamId();
-        List<MatchResponse> matches = new ArrayList<>();
+        List<FootballMatchData> matches = new ArrayList<>();
         int firstSeason = currentSeasonStartYear();
 
         for (int seasonOffset = 0; seasonOffset < maxSeasons && matches.size() < limit; seasonOffset++) {
             collectSeason(teamId, firstSeason - seasonOffset, matches);
         }
 
-        Map<Long, MatchResponse> uniqueMatches = new LinkedHashMap<>();
+        Map<Long, FootballMatchData> uniqueMatches = new LinkedHashMap<>();
         matches.stream()
-                .sorted(Comparator.comparing(MatchResponse::kickoffTime).reversed())
-                .forEach(match -> uniqueMatches.putIfAbsent(match.fixtureId(), match));
+                .sorted(Comparator.comparing(FootballMatchData::kickoffTime).reversed())
+                .forEach(match -> uniqueMatches.putIfAbsent(match.providerFixtureId(), match));
 
-        List<MatchResponse> result = uniqueMatches.values().stream().limit(limit).toList();
+        List<FootballMatchData> result = uniqueMatches.values().stream().limit(limit).toList();
         if (result.isEmpty()) {
             throw new FootballDataException(
                     "No finished Manchester United matches were available in the accessible seasons");
@@ -89,7 +92,7 @@ public class ApiFootballDataProvider implements FootballDataProvider {
         throw new FootballDataException("Manchester United could not be resolved by the football data provider");
     }
 
-    private void collectSeason(long teamId, int season, List<MatchResponse> matches) {
+    private void collectSeason(long teamId, int season, List<FootballMatchData> matches) {
         int page = 1;
         int totalPages;
         do {
@@ -110,7 +113,7 @@ public class ApiFootballDataProvider implements FootballDataProvider {
             }
 
             for (JsonNode fixture : payload.path("response")) {
-                MatchResponse mapped = mapFixture(fixture);
+                FootballMatchData mapped = mapFixture(fixture);
                 if (mapped != null) {
                     matches.add(mapped);
                 }
@@ -142,14 +145,18 @@ public class ApiFootballDataProvider implements FootballDataProvider {
         }
     }
 
-    static MatchResponse mapFixture(JsonNode item) {
+    static FootballMatchData mapFixture(JsonNode item) {
         JsonNode fixture = item.path("fixture");
+        JsonNode league = item.path("league");
         JsonNode teams = item.path("teams");
         JsonNode goals = item.path("goals");
         String status = fixture.path("status").path("short").asText("");
         if (!FINISHED_STATUSES.contains(status)
-                || fixture.path("id").isMissingNode()
+                || fixture.path("id").asLong(0L) <= 0
+                || league.path("id").asLong(0L) <= 0
                 || fixture.path("date").asText("").isBlank()
+                || teams.path("home").path("id").asLong(0L) <= 0
+                || teams.path("away").path("id").asLong(0L) <= 0
                 || teams.path("home").path("name").asText("").isBlank()
                 || teams.path("away").path("name").asText("").isBlank()
                 || !goals.path("home").isNumber()
@@ -160,16 +167,38 @@ public class ApiFootballDataProvider implements FootballDataProvider {
         try {
             int homeGoals = goals.path("home").asInt();
             int awayGoals = goals.path("away").asInt();
-            return new MatchResponse(
+            Integer season = league.path("season").isNumber()
+                    ? league.path("season").asInt()
+                    : null;
+            return new FootballMatchData(
                     fixture.path("id").asLong(),
                     OffsetDateTime.parse(fixture.path("date").asText()),
-                    item.path("league").path("name").asText("Unknown competition"),
-                    teams.path("home").path("name").asText(),
-                    teams.path("away").path("name").asText(),
+                    season,
+                    league.path("round").asText(null),
+                    fixture.path("venue").path("name").asText(null),
+                    new FootballCompetitionData(
+                            league.path("id").asLong(),
+                            league.path("name").asText("Unknown competition"),
+                            league.path("country").asText(null),
+                            league.path("logo").asText(null)),
+                    new FootballTeamData(
+                            teams.path("home").path("id").asLong(),
+                            teams.path("home").path("name").asText(),
+                            null,
+                            null,
+                            teams.path("home").path("logo").asText(null)),
+                    new FootballTeamData(
+                            teams.path("away").path("id").asLong(),
+                            teams.path("away").path("name").asText(),
+                            null,
+                            null,
+                            teams.path("away").path("logo").asText(null)),
                     homeGoals,
                     awayGoals,
                     status,
-                    homeGoals + "-" + awayGoals);
+                    homeGoals + "-" + awayGoals,
+                    FootballDataSource.LIVE,
+                    false);
         } catch (RuntimeException exception) {
             return null;
         }

@@ -36,6 +36,8 @@ All configuration is supplied through environment variables. No API keys or data
 | `FOOTBALL_API_KEY` | empty | Required only in live mode |
 | `FOOTBALL_API_BASE_URL` | `https://v3.football.api-sports.io` | API-Football base URL |
 | `FOOTBALL_API_MAX_SEASONS` | `5` | Maximum seasons searched in live mode |
+| `FOOTBALL_SYNC_ENABLED` | `false` | Run one local match synchronization during application startup |
+| `FOOTBALL_SYNC_LIMIT` | `20` | Number of recent matches requested by the startup synchronization |
 
 PowerShell live-mode example:
 
@@ -54,6 +56,27 @@ cd backend
 ```
 
 The mock endpoint returns deterministic demonstration records explicitly marked `SYNTHETIC`; they are not real match results.
+
+## Persist matches locally
+
+Synchronization is disabled by default and is never triggered by a GET request. To run one explicitly enabled mock synchronization at application startup:
+
+```powershell
+$env:DB_PASSWORD = "your-local-database-password"
+$env:FOOTBALL_DATA_MODE = "mock"
+$env:FOOTBALL_SYNC_ENABLED = "true"
+$env:FOOTBALL_SYNC_LIMIT = "5"
+cd backend
+.\mvnw.cmd spring-boot:run
+```
+
+Mock rows remain marked with `data_source = 'MOCK'` and `synthetic = true`. For live synchronization, set `FOOTBALL_DATA_MODE=live` and provide `FOOTBALL_API_KEY`; do not commit the key. Stop the application after the startup log reports the synchronization result, then unset `FOOTBALL_SYNC_ENABLED` if subsequent starts should not synchronize.
+
+Verify persisted rows without changing them:
+
+```powershell
+docker exec manutd-postgres psql -X -U manutd -d manutd -c "SELECT provider_fixture_id, kickoff_time, status, data_source, synthetic FROM matches ORDER BY kickoff_time DESC LIMIT 20;"
+```
 
 ## API examples
 
