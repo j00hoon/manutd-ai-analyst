@@ -103,7 +103,7 @@ class CorePersistenceIntegrationTest {
     }
 
     @Test
-    void flywayUpgradesFromCoreSchemaToAnalyticsFoundation() {
+    void flywayRetainsAnalyticsFoundationAfterPlayerStatisticsUpgrade() {
         String version = jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
                 String.class);
@@ -127,7 +127,7 @@ class CorePersistenceIntegrationTest {
                 """,
                 String.class);
 
-        assertEquals("2", version);
+        assertEquals("3", version);
         assertEquals(List.of("away_penalty_goals", "home_penalty_goals"), columns);
         assertEquals("timestamp with time zone", checkedAtType);
     }

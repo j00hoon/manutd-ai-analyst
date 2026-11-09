@@ -2,8 +2,12 @@ package com.manutd.analyst.client;
 
 import com.manutd.analyst.client.model.FootballCompetitionData;
 import com.manutd.analyst.client.model.FootballFixtureStatisticsData;
+import com.manutd.analyst.client.model.FootballFixturePlayerStatisticsData;
 import com.manutd.analyst.client.model.FootballMatchData;
+import com.manutd.analyst.client.model.FootballPlayerData;
+import com.manutd.analyst.client.model.FootballPlayerMatchStatisticsData;
 import com.manutd.analyst.client.model.FootballTeamMatchStatisticsData;
+import com.manutd.analyst.client.model.FootballTeamPlayerStatisticsData;
 import com.manutd.analyst.client.model.FootballTeamData;
 import com.manutd.analyst.entity.FootballDataSource;
 import com.manutd.analyst.exception.FootballDataException;
@@ -22,10 +26,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 @ConditionalOnProperty(name = "football.data.mode", havingValue = "live")
@@ -80,6 +86,17 @@ public class ApiFootballDataProvider implements FootballDataProvider {
         JsonNode payload = get("/fixtures/statistics?fixture={fixtureId}", fixtureId);
         assertNoApiErrors(payload, "fixture statistics request");
         return mapFixtureStatistics(fixtureId, payload);
+    }
+
+    @Override
+    public FootballFixturePlayerStatisticsData getFixturePlayerStatistics(long fixtureId) {
+        if (fixtureId <= 0) {
+            throw new IllegalArgumentException("Fixture ID must be positive for live player statistics");
+        }
+        requireApiKey();
+        JsonNode payload = get("/fixtures/players?fixture={fixtureId}", fixtureId);
+        assertNoApiErrors(payload, "fixture player statistics request");
+        return mapFixturePlayerStatistics(fixtureId, payload);
     }
 
     private long discoverManchesterUnitedTeamId() {
@@ -249,6 +266,105 @@ public class ApiFootballDataProvider implements FootballDataProvider {
         return new FootballFixtureStatisticsData(fixtureId, teams);
     }
 
+    static FootballFixturePlayerStatisticsData mapFixturePlayerStatistics(long fixtureId, JsonNode payload) {
+        List<FootballTeamPlayerStatisticsData> teams = new ArrayList<>();
+        Set<Long> seenTeamIds = new HashSet<>();
+        Set<Long> seenPlayerIds = new HashSet<>();
+        int skipped = 0;
+        JsonNode response = payload.path("response");
+        if (!response.isArray()) {
+            return new FootballFixturePlayerStatisticsData(fixtureId, List.of(), 1);
+        }
+
+        for (JsonNode teamItem : response) {
+            Long providerTeamId = positiveLong(teamItem.path("team").path("id"));
+            JsonNode playerItems = teamItem.path("players");
+            if (providerTeamId == null || !seenTeamIds.add(providerTeamId) || !playerItems.isArray()) {
+                skipped++;
+                continue;
+            }
+
+            List<FootballPlayerMatchStatisticsData> players = new ArrayList<>();
+            for (JsonNode playerItem : playerItems) {
+                JsonNode identity = playerItem.path("player");
+                Long providerPlayerId = positiveLong(identity.path("id"));
+                String name = nullableText(identity.path("name"));
+                if (providerPlayerId == null || name == null || !seenPlayerIds.add(providerPlayerId)) {
+                    skipped++;
+                    continue;
+                }
+                JsonNode statisticsItems = playerItem.path("statistics");
+                JsonNode statistics = statisticsItems.isArray() && !statisticsItems.isEmpty()
+                        ? statisticsItems.get(0)
+                        : null;
+                if (statistics == null) {
+                    skipped++;
+                    continue;
+                }
+                try {
+                    players.add(mapPlayerStatistics(identity, statistics));
+                } catch (RuntimeException exception) {
+                    skipped++;
+                }
+            }
+            teams.add(new FootballTeamPlayerStatisticsData(providerTeamId, players));
+        }
+        return new FootballFixturePlayerStatisticsData(fixtureId, teams, skipped);
+    }
+
+    private static FootballPlayerMatchStatisticsData mapPlayerStatistics(JsonNode identity, JsonNode statistics) {
+        JsonNode games = statistics.path("games");
+        JsonNode shots = statistics.path("shots");
+        JsonNode goals = statistics.path("goals");
+        JsonNode passes = statistics.path("passes");
+        JsonNode tackles = statistics.path("tackles");
+        JsonNode duels = statistics.path("duels");
+        JsonNode dribbles = statistics.path("dribbles");
+        JsonNode fouls = statistics.path("fouls");
+        JsonNode cards = statistics.path("cards");
+        JsonNode penalty = statistics.path("penalty");
+        JsonNode committedPenalty = penalty.path("committed");
+        if (committedPenalty.isMissingNode()) {
+            committedPenalty = penalty.path("commited");
+        }
+        return new FootballPlayerMatchStatisticsData(
+                new FootballPlayerData(
+                        positiveLong(identity.path("id")),
+                        nullableText(identity.path("name")),
+                        nullableText(identity.path("photo"))),
+                boundedInteger(games.path("minutes"), 0, 130),
+                nullableText(games.path("position")),
+                boundedInteger(games.path("number"), 0, 999),
+                decimalInRange(games.path("rating"), BigDecimal.ZERO, BigDecimal.TEN, false),
+                nullableBoolean(games.path("captain")),
+                nullableBoolean(games.path("substitute")),
+                nonNegativeInteger(statistics.path("offsides")),
+                nonNegativeInteger(shots.path("total")),
+                nonNegativeInteger(shots.path("on")),
+                nonNegativeInteger(goals.path("total")),
+                nonNegativeInteger(goals.path("assists")),
+                nonNegativeInteger(goals.path("saves")),
+                nonNegativeInteger(passes.path("total")),
+                nonNegativeInteger(passes.path("key")),
+                decimalInRange(passes.path("accuracy"), BigDecimal.ZERO, BigDecimal.valueOf(100), true),
+                nonNegativeInteger(tackles.path("total")),
+                nonNegativeInteger(tackles.path("blocks")),
+                nonNegativeInteger(tackles.path("interceptions")),
+                nonNegativeInteger(duels.path("total")),
+                nonNegativeInteger(duels.path("won")),
+                nonNegativeInteger(dribbles.path("attempts")),
+                nonNegativeInteger(dribbles.path("success")),
+                nonNegativeInteger(fouls.path("drawn")),
+                nonNegativeInteger(fouls.path("committed")),
+                nonNegativeInteger(cards.path("yellow")),
+                nonNegativeInteger(cards.path("red")),
+                nonNegativeInteger(penalty.path("won")),
+                nonNegativeInteger(committedPenalty),
+                nonNegativeInteger(penalty.path("scored")),
+                nonNegativeInteger(penalty.path("missed")),
+                nonNegativeInteger(penalty.path("saved")));
+    }
+
     private static Integer nullableInteger(JsonNode value) {
         if (value == null || value.isMissingNode() || value.isNull()) {
             return null;
@@ -265,6 +381,63 @@ public class ApiFootballDataProvider implements FootballDataProvider {
                     ? value.asInt()
                     : Integer.parseInt(value.asText("").trim());
             return parsed >= 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private static Integer boundedInteger(JsonNode value, int minimum, int maximum) {
+        Integer parsed = nonNegativeInteger(value);
+        return parsed != null && parsed >= minimum && parsed <= maximum ? parsed : null;
+    }
+
+    private static Long positiveLong(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        try {
+            long parsed = value.isNumber() ? value.asLong() : Long.parseLong(value.asText("").trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private static String nullableText(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        String text = value.asText("").trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    private static Boolean nullableBoolean(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (value.isBoolean()) {
+            return value.asBoolean();
+        }
+        String text = value.asText("").trim().toLowerCase(Locale.ROOT);
+        return switch (text) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> null;
+        };
+    }
+
+    private static BigDecimal decimalInRange(
+            JsonNode value, BigDecimal minimum, BigDecimal maximum, boolean stripPercentage) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        try {
+            String raw = value.asText("").trim();
+            if (stripPercentage) {
+                raw = raw.replace("%", "").trim();
+            }
+            BigDecimal parsed = new BigDecimal(raw);
+            return parsed.compareTo(minimum) >= 0 && parsed.compareTo(maximum) <= 0 ? parsed : null;
         } catch (NumberFormatException exception) {
             return null;
         }
