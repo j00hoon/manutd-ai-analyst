@@ -36,6 +36,12 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(ResourceNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handleNotFound(
+            ResourceNotFoundException exception, HttpServletRequest request) {
+        return response(HttpStatus.NOT_FOUND, exception.getMessage(), request);
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiErrorResponse> handleUnexpected(Exception exception, HttpServletRequest request) {
         return response(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);

@@ -75,6 +75,8 @@ public class MatchPersistenceService {
                         awayTeam,
                         match.homeGoals(),
                         match.awayGoals(),
+                        match.homePenaltyGoals(),
+                        match.awayPenaltyGoals(),
                         match.status(),
                         match.result(),
                         match.dataSource(),
@@ -91,6 +93,8 @@ public class MatchPersistenceService {
                         awayTeam,
                         match.homeGoals(),
                         match.awayGoals(),
+                        match.homePenaltyGoals(),
+                        match.awayPenaltyGoals(),
                         match.status(),
                         match.result());
                 updated++;

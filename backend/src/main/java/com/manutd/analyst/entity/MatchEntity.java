@@ -57,6 +57,12 @@ public class MatchEntity {
     @Column(name = "away_goals")
     private Integer awayGoals;
 
+    @Column(name = "home_penalty_goals")
+    private Integer homePenaltyGoals;
+
+    @Column(name = "away_penalty_goals")
+    private Integer awayPenaltyGoals;
+
     @Column(nullable = false, length = 30)
     private String status;
 
@@ -90,6 +96,8 @@ public class MatchEntity {
             TeamEntity awayTeam,
             Integer homeGoals,
             Integer awayGoals,
+            Integer homePenaltyGoals,
+            Integer awayPenaltyGoals,
             String status,
             String result,
             FootballDataSource dataSource,
@@ -104,10 +112,31 @@ public class MatchEntity {
         this.awayTeam = awayTeam;
         this.homeGoals = homeGoals;
         this.awayGoals = awayGoals;
+        this.homePenaltyGoals = homePenaltyGoals;
+        this.awayPenaltyGoals = awayPenaltyGoals;
         this.status = status;
         this.result = result;
         this.dataSource = dataSource;
         this.synthetic = synthetic;
+    }
+
+    public MatchEntity(
+            Long fixtureId,
+            CompetitionEntity competition,
+            Integer season,
+            String round,
+            OffsetDateTime kickoffTime,
+            String venueName,
+            TeamEntity homeTeam,
+            TeamEntity awayTeam,
+            Integer homeGoals,
+            Integer awayGoals,
+            String status,
+            String result,
+            FootballDataSource dataSource,
+            boolean synthetic) {
+        this(fixtureId, competition, season, round, kickoffTime, venueName, homeTeam, awayTeam,
+                homeGoals, awayGoals, null, null, status, result, dataSource, synthetic);
     }
 
     public void updateMatchDetails(
@@ -120,6 +149,8 @@ public class MatchEntity {
             TeamEntity awayTeam,
             Integer homeGoals,
             Integer awayGoals,
+            Integer homePenaltyGoals,
+            Integer awayPenaltyGoals,
             String status,
             String result) {
         this.competition = competition;
@@ -137,8 +168,26 @@ public class MatchEntity {
         this.awayTeam = awayTeam;
         this.homeGoals = homeGoals;
         this.awayGoals = awayGoals;
+        this.homePenaltyGoals = homePenaltyGoals;
+        this.awayPenaltyGoals = awayPenaltyGoals;
         this.status = status;
         this.result = result;
+    }
+
+    public void updateMatchDetails(
+            CompetitionEntity competition,
+            Integer season,
+            String round,
+            OffsetDateTime kickoffTime,
+            String venueName,
+            TeamEntity homeTeam,
+            TeamEntity awayTeam,
+            Integer homeGoals,
+            Integer awayGoals,
+            String status,
+            String result) {
+        updateMatchDetails(competition, season, round, kickoffTime, venueName, homeTeam, awayTeam,
+                homeGoals, awayGoals, null, null, status, result);
     }
 
     @PrePersist
@@ -199,6 +248,14 @@ public class MatchEntity {
 
     public Integer getAwayGoals() {
         return awayGoals;
+    }
+
+    public Integer getHomePenaltyGoals() {
+        return homePenaltyGoals;
+    }
+
+    public Integer getAwayPenaltyGoals() {
+        return awayPenaltyGoals;
     }
 
     public String getStatus() {

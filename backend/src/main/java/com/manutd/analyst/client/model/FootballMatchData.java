@@ -16,10 +16,31 @@ public record FootballMatchData(
         FootballTeamData awayTeam,
         Integer homeGoals,
         Integer awayGoals,
+        Integer homePenaltyGoals,
+        Integer awayPenaltyGoals,
         String status,
         String result,
         FootballDataSource dataSource,
         boolean synthetic) {
+
+    public FootballMatchData(
+            Long providerFixtureId,
+            OffsetDateTime kickoffTime,
+            Integer season,
+            String round,
+            String venueName,
+            FootballCompetitionData competition,
+            FootballTeamData homeTeam,
+            FootballTeamData awayTeam,
+            Integer homeGoals,
+            Integer awayGoals,
+            String status,
+            String result,
+            FootballDataSource dataSource,
+            boolean synthetic) {
+        this(providerFixtureId, kickoffTime, season, round, venueName, competition, homeTeam, awayTeam,
+                homeGoals, awayGoals, null, null, status, result, dataSource, synthetic);
+    }
 
     public MatchResponse toResponse() {
         return new MatchResponse(

@@ -1,6 +1,7 @@
 package com.manutd.analyst.client;
 
 import com.manutd.analyst.client.model.FootballCompetitionData;
+import com.manutd.analyst.client.model.FootballFixtureStatisticsData;
 import com.manutd.analyst.client.model.FootballMatchData;
 import com.manutd.analyst.client.model.FootballTeamData;
 import com.manutd.analyst.entity.FootballDataSource;
@@ -15,6 +16,11 @@ import java.util.stream.IntStream;
 @Component
 @ConditionalOnProperty(name = "football.data.mode", havingValue = "mock", matchIfMissing = true)
 public class MockFootballDataProvider implements FootballDataProvider {
+
+    @Override
+    public FootballFixtureStatisticsData getFixtureStatistics(long fixtureId) {
+        return new FootballFixtureStatisticsData(fixtureId, List.of());
+    }
 
     @Override
     public List<FootballMatchData> getLatestFinishedMatchData(int limit) {

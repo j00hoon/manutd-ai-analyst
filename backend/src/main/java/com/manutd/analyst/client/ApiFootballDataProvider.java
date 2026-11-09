@@ -1,7 +1,9 @@
 package com.manutd.analyst.client;
 
 import com.manutd.analyst.client.model.FootballCompetitionData;
+import com.manutd.analyst.client.model.FootballFixtureStatisticsData;
 import com.manutd.analyst.client.model.FootballMatchData;
+import com.manutd.analyst.client.model.FootballTeamMatchStatisticsData;
 import com.manutd.analyst.client.model.FootballTeamData;
 import com.manutd.analyst.entity.FootballDataSource;
 import com.manutd.analyst.exception.FootballDataException;
@@ -15,6 +17,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -66,6 +69,17 @@ public class ApiFootballDataProvider implements FootballDataProvider {
                     "No finished Manchester United matches were available in the accessible seasons");
         }
         return result;
+    }
+
+    @Override
+    public FootballFixtureStatisticsData getFixtureStatistics(long fixtureId) {
+        if (fixtureId <= 0) {
+            throw new IllegalArgumentException("Fixture ID must be positive for live statistics");
+        }
+        requireApiKey();
+        JsonNode payload = get("/fixtures/statistics?fixture={fixtureId}", fixtureId);
+        assertNoApiErrors(payload, "fixture statistics request");
+        return mapFixtureStatistics(fixtureId, payload);
     }
 
     private long discoverManchesterUnitedTeamId() {
@@ -195,11 +209,81 @@ public class ApiFootballDataProvider implements FootballDataProvider {
                             teams.path("away").path("logo").asText(null)),
                     homeGoals,
                     awayGoals,
+                    nullableInteger(item.path("score").path("penalty").path("home")),
+                    nullableInteger(item.path("score").path("penalty").path("away")),
                     status,
                     homeGoals + "-" + awayGoals,
                     FootballDataSource.LIVE,
                     false);
         } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    static FootballFixtureStatisticsData mapFixtureStatistics(long fixtureId, JsonNode payload) {
+        List<FootballTeamMatchStatisticsData> teams = new ArrayList<>();
+        for (JsonNode item : payload.path("response")) {
+            long providerTeamId = item.path("team").path("id").asLong(0L);
+            if (providerTeamId <= 0) {
+                continue;
+            }
+
+            Integer shots = null;
+            Integer shotsOnTarget = null;
+            BigDecimal possession = null;
+            for (JsonNode statistic : item.path("statistics")) {
+                String type = statistic.path("type").asText("").trim().toLowerCase(Locale.ROOT);
+                JsonNode value = statistic.path("value");
+                switch (type) {
+                    case "total shots" -> shots = nonNegativeInteger(value);
+                    case "shots on goal" -> shotsOnTarget = nonNegativeInteger(value);
+                    case "ball possession" -> possession = percentage(value);
+                    default -> {
+                        // The provider adds fields over time; unsupported statistics are intentionally ignored.
+                    }
+                }
+            }
+            teams.add(new FootballTeamMatchStatisticsData(
+                    providerTeamId, shots, shotsOnTarget, possession));
+        }
+        return new FootballFixtureStatisticsData(fixtureId, teams);
+    }
+
+    private static Integer nullableInteger(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        return nonNegativeInteger(value);
+    }
+
+    private static Integer nonNegativeInteger(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        try {
+            int parsed = value.isNumber()
+                    ? value.asInt()
+                    : Integer.parseInt(value.asText("").trim());
+            return parsed >= 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private static BigDecimal percentage(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        try {
+            String raw = value.isNumber()
+                    ? value.asText()
+                    : value.asText("").trim().replace("%", "").trim();
+            BigDecimal parsed = new BigDecimal(raw);
+            return parsed.compareTo(BigDecimal.ZERO) >= 0
+                    && parsed.compareTo(BigDecimal.valueOf(100)) <= 0
+                    ? parsed
+                    : null;
+        } catch (NumberFormatException exception) {
             return null;
         }
     }

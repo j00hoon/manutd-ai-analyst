@@ -10,4 +10,7 @@ public interface TeamRepository extends JpaRepository<TeamEntity, Long> {
 
     Optional<TeamEntity> findByProviderTeamIdAndDataSource(
             Long providerTeamId, FootballDataSource dataSource);
+
+    Optional<TeamEntity> findFirstByNameStartingWithIgnoreCaseAndDataSourceOrderByIdAsc(
+            String name, FootballDataSource dataSource);
 }
