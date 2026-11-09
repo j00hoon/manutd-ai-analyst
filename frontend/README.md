@@ -1,4 +1,20 @@
-# React + TypeScript + Vite
+# Manchester United AI Football Analyst — Frontend
+
+## Run locally
+
+Start the Spring Boot backend on `http://localhost:8080`, then run:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/api` requests to the backend. The UI displays a prominent **DEMO DATA** notice whenever the backend is using its synthetic mock provider.
+
+Create a production build with `npm run build`.
+
+## Vite project notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

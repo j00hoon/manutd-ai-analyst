@@ -1,2 +1,33 @@
 services:
-  
+  postgres:
+    image: postgres:17
+    container_name: manutd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: manutd
+      POSTGRES_USER: manutd
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      TZ: America/New_York
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manutd -d manutd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: manutd-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
